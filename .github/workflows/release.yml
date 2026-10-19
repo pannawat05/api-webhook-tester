@@ -1,0 +1,76 @@
+name: Build desktop releases
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: macOS ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-14
+            target: aarch64-apple-darwin
+          - arch: intel
+            runner: macos-13
+            target: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Package app and DMG
+        shell: bash
+        run: |
+          APP="API & Webhook Tester.app"
+          mkdir -p "package/$APP/Contents/MacOS" "package/$APP/Contents/Resources"
+          cp "target/${{ matrix.target }}/release/api-webhook-tester" "package/$APP/Contents/MacOS/api-webhook-tester"
+          chmod +x "package/$APP/Contents/MacOS/api-webhook-tester"
+          cat > "package/$APP/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+          <key>CFBundleName</key><string>API &amp; Webhook Tester</string>
+          <key>CFBundleDisplayName</key><string>API &amp; Webhook Tester</string>
+          <key>CFBundleIdentifier</key><string>dev.apiwebhooktester.desktop</string>
+          <key>CFBundleExecutable</key><string>api-webhook-tester</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>CFBundleVersion</key><string>0.1.0</string>
+          <key>LSMinimumSystemVersion</key><string>11.0</string>
+          </dict></plist>
+          PLIST
+          mkdir -p dmg-root
+          cp -R "package/$APP" dmg-root/
+          ln -s /Applications dmg-root/Applications
+          hdiutil create -volname "API & Webhook Tester" -srcfolder dmg-root -ov -format UDZO "API-Webhook-Tester-macos-${{ matrix.arch }}.dmg"
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: "*.dmg"
+
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: cargo build --release
+      - name: Package executable
+        shell: pwsh
+        run: Copy-Item target/release/api-webhook-tester.exe API-Webhook-Tester-windows-x64.exe
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: "*.exe"

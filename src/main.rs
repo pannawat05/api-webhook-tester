@@ -176,6 +176,43 @@ impl App {
     }
 }
 
+fn app_icon() -> egui::IconData {
+    let size = 64;
+    let mut rgba = Vec::with_capacity(size * size * 4);
+    let bolt = [(37.0, 7.0), (18.0, 34.0), (29.0, 34.0), (25.0, 57.0), (47.0, 26.0), (35.0, 26.0)];
+
+    for y in 0..size {
+        for x in 0..size {
+            let px = x as f32 + 0.5;
+            let py = y as f32 + 0.5;
+            let corner_x = if px < 14.0 { 14.0 } else if px > 50.0 { 50.0 } else { px };
+            let corner_y = if py < 14.0 { 14.0 } else if py > 50.0 { 50.0 } else { py };
+            let rounded = (px - corner_x).powi(2) + (py - corner_y).powi(2) <= 14.0_f32.powi(2);
+            let mut inside_bolt = false;
+            let mut previous = bolt[bolt.len() - 1];
+            for current in bolt {
+                if (current.1 > py) != (previous.1 > py)
+                    && px < (previous.0 - current.0) * (py - current.1) / (previous.1 - current.1) + current.0
+                {
+                    inside_bolt = !inside_bolt;
+                }
+                previous = current;
+            }
+
+            let (red, green, blue, alpha) = if !rounded {
+                (0, 0, 0, 0)
+            } else if inside_bolt {
+                (255, 255, 255, 255)
+            } else {
+                (0, 123, 145, 255)
+            };
+            rgba.extend_from_slice(&[red, green, blue, alpha]);
+        }
+    }
+
+    egui::IconData { rgba, width: size as u32, height: size as u32 }
+}
+
 async fn receive_webhook(
     State(state): State<HookState>,
     method: Method,
@@ -203,7 +240,7 @@ async fn receive_webhook(
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        ctx.set_visuals(egui::Visuals::dark());
+        ctx.set_visuals(egui::Visuals::light());
         egui::TopBottomPanel::top("top").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.heading("⚡ API & Webhook Tester");
@@ -231,8 +268,9 @@ impl eframe::App for App {
                                 ui.selectable_value(&mut self.method_idx, i, *m);
                             }
                         });
-                    ui.add(egui::TextEdit::singleline(&mut self.url).hint_text("https://api.example.com/endpoint").desired_width(f32::INFINITY));
-                    if ui.add_enabled(!self.sending, egui::Button::new("▶ Send")).clicked() { self.send_request(); }
+                    let url_width = (ui.available_width() - 88.0).max(80.0);
+                    ui.add_sized([url_width, ui.spacing().interact_size.y], egui::TextEdit::singleline(&mut self.url).hint_text("https://api.example.com/endpoint"));
+                    if ui.add_enabled(!self.sending, egui::Button::new("▶ Send").min_size(egui::vec2(80.0, 0.0))).clicked() { self.send_request(); }
                 });
                 ui.columns(2, |cols| {
                     cols[0].label("Headers (one per line: Key: Value)");
@@ -303,6 +341,7 @@ fn main() -> eframe::Result<()> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1120.0, 820.0])
             .with_min_inner_size([760.0, 600.0])
+            .with_icon(std::sync::Arc::new(app_icon()))
             .with_title("API & Webhook Tester"),
         ..Default::default()
     };
